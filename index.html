@@ -6839,9 +6839,21 @@ window.onerror=(msg,src,line)=>{
   document.getElementById('app-root').innerHTML=`<div class="wrap"><div style="background:var(--red-bg);border:1px solid #fca5a5;border-radius:var(--r);padding:16px;margin:20px 0;font-size:13px;color:var(--red)"><strong>Error:</strong> ${x(String(msg))}</div></div>`;
 };
 
+// Safety net: if INITIAL_SESSION never fires (Supabase slow / network hiccup)
+// force the login screen after 8 seconds so the user isn't stuck on a spinner.
+let _authResolved = false;
+setTimeout(() => {
+  if(!_authResolved){
+    console.warn('Auth timeout — forcing login screen');
+    VIEW = 'login';
+    renderLogin();
+  }
+}, 8000);
+
 // Single source of truth for auth — onAuthStateChange fires INITIAL_SESSION
 // immediately on page load, so we never need a separate getSession() call.
 _sb.auth.onAuthStateChange(async (event, session) => {
+  _authResolved = true;
   if(event === 'INITIAL_SESSION'){
     if(session){
       // Returning user — go straight to home
