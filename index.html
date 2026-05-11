@@ -6839,21 +6839,29 @@ window.onerror=(msg,src,line)=>{
   document.getElementById('app-root').innerHTML=`<div class="wrap"><div style="background:var(--red-bg);border:1px solid #fca5a5;border-radius:var(--r);padding:16px;margin:20px 0;font-size:13px;color:var(--red)"><strong>Error:</strong> ${x(String(msg))}</div></div>`;
 };
 
-// Safety net: if INITIAL_SESSION never fires (Supabase slow / network hiccup)
-// force the login screen after 8 seconds so the user isn't stuck on a spinner.
-let _authResolved = false;
+// Helper: getSession() with a 5-second timeout so it never hangs the spinner.
+function _getSessionSafe(){
+  return Promise.race([
+    _sb.auth.getSession(),
+    new Promise(r => setTimeout(() => r({data:{session:null}}), 5000))
+  ]);
+}
+
+// Safety net: if the app is still showing the spinner after 10 seconds,
+// force the login screen. _authDone() is called whenever we actually render.
+let _authDone = false;
+function _markAuthDone(){ _authDone = true; }
 setTimeout(() => {
-  if(!_authResolved){
+  if(!_authDone){
     console.warn('Auth timeout — forcing login screen');
     VIEW = 'login';
     renderLogin();
   }
-}, 8000);
+}, 10000);
 
 // Single source of truth for auth — onAuthStateChange fires INITIAL_SESSION
 // immediately on page load, so we never need a separate getSession() call.
 _sb.auth.onAuthStateChange(async (event, session) => {
-  _authResolved = true;
   if(event === 'INITIAL_SESSION'){
     if(session){
       // Returning user — go straight to home
@@ -6864,14 +6872,15 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       restoreNav();                              // restore last VIEW/project on refresh
       if(!CUR) VIEW = 'home';                   // safety: if no project loaded fall back to home
       if(VIEW==='report'&&!CUR) VIEW='home';    // report needs CUR — fall back gracefully
+      _markAuthDone();
       renderAll();
       syncProjectsFromSupabase().catch(console.warn);
     } else {
       // INITIAL_SESSION null — could mean token is mid-refresh. Try getSession() once
-      // before giving up, to handle the case where the refresh token is still valid
-      // but the access token expired while the app was closed.
+      // (with timeout) before giving up, to handle the case where the refresh token is
+      // still valid but the access token expired while the app was closed.
       try {
-        const { data } = await _sb.auth.getSession();
+        const { data } = await _getSessionSafe();
         if(data?.session){
           CURRENT_USER = data.session.user;
           try { await loadCurrentProfile(); } catch(e){ console.warn('loadProfile:', e); }
@@ -6880,12 +6889,14 @@ _sb.auth.onAuthStateChange(async (event, session) => {
           restoreNav();
           if(!CUR) VIEW = 'home';
           if(VIEW==='report'&&!CUR) VIEW='home';
+          _markAuthDone();
           renderAll();
           syncProjectsFromSupabase().catch(console.warn);
           return;
         }
       } catch(e){ console.warn('getSession fallback failed:', e); }
-      // Truly no session
+      // Truly no session — show login
+      _markAuthDone();
       VIEW = 'login';
       renderLogin();
     }
