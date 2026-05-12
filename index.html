@@ -6747,10 +6747,22 @@ async function signInWithPassword(){
   if(!password) { errEl.textContent='Please enter your password';      errEl.style.display=''; return; }
   const btn = document.getElementById('login-submit-btn');
   if(btn){ btn.textContent='Signing in…'; btn.disabled=true; }
-  const { error } = await _sb.auth.signInWithPassword({ email, password });
-  if(error){
-    errEl.textContent = error.message === 'Invalid login credentials'
-      ? 'Incorrect email or password' : error.message;
+  try {
+    const timeout = new Promise((_,r) => setTimeout(()=>r(new Error('timeout')), 10000));
+    const { error } = await Promise.race([
+      _sb.auth.signInWithPassword({ email, password }),
+      timeout
+    ]);
+    if(error){
+      const msg = error.message === 'Invalid login credentials' ? 'Incorrect email or password'
+                : error.message === 'timeout' ? 'Can\'t reach the server — check your connection or try on mobile'
+                : error.message;
+      errEl.textContent = msg;
+      errEl.style.display = '';
+      if(btn){ btn.textContent='Sign in →'; btn.disabled=false; }
+    }
+  } catch(e) {
+    errEl.textContent = 'Can\'t reach the server — check your connection or try on mobile';
     errEl.style.display = '';
     if(btn){ btn.textContent='Sign in →'; btn.disabled=false; }
   }
