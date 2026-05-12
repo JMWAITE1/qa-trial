@@ -6646,34 +6646,85 @@ function renderLogin(){
   document.getElementById('app-root').innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#d8e0ea">
       <div style="background:#fff;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.18);padding:36px 32px;width:100%;max-width:380px">
-        <div style="text-align:center;margin-bottom:28px">
+        <div style="text-align:center;margin-bottom:24px">
           <div style="display:inline-flex;background:var(--navy);border-radius:8px;padding:8px 14px;margin-bottom:14px">
             <img src="${NGL_LOGO_SRC}" style="height:28px;width:auto" alt="NGL">
           </div>
           <div style="font-size:20px;font-weight:700;color:var(--navy)">Quality Assurance</div>
           <div style="font-size:13px;color:var(--gray);margin-top:4px">Sign in to continue</div>
         </div>
+
+        <!-- Mode toggle -->
+        <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:20px">
+          <button id="login-tab-pw" onclick="loginSetMode('password')"
+            style="flex:1;border:none;border-radius:6px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;background:var(--navy);color:#fff;transition:all .15s">
+            Password
+          </button>
+          <button id="login-tab-link" onclick="loginSetMode('link')"
+            style="flex:1;border:none;border-radius:6px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:var(--gray);transition:all .15s">
+            Email link
+          </button>
+        </div>
+
+        <!-- Phase 1: input form -->
         <div id="login-phase-1">
           <div class="fg">
             <label>Email address</label>
             <input id="login-email" type="email" placeholder="you@yourcompany.com" autocomplete="email"
-              onkeydown="if(event.key==='Enter')sendMagicLink()"
+              onkeydown="if(event.key==='Enter')loginSubmit()"
               style="font-size:14px;padding:10px 12px">
           </div>
-          <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;font-size:14px;margin-top:4px" onclick="sendMagicLink()">
-            Send sign-in link →
+          <div id="login-pw-wrap" class="fg" style="margin-top:0">
+            <label>Password</label>
+            <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password"
+              onkeydown="if(event.key==='Enter')loginSubmit()"
+              style="font-size:14px;padding:10px 12px">
+          </div>
+          <button class="btn btn-primary" id="login-submit-btn"
+            style="width:100%;justify-content:center;padding:11px 0;font-size:14px;margin-top:4px"
+            onclick="loginSubmit()">
+            Sign in →
           </button>
           <div id="login-error" style="display:none;margin-top:10px;font-size:12px;color:var(--red);text-align:center;padding:8px;background:var(--red-bg);border-radius:6px"></div>
         </div>
+
+        <!-- Phase 2: magic link sent confirmation -->
         <div id="login-phase-2" style="display:none;text-align:center">
           <div style="font-size:40px;margin-bottom:14px">✉️</div>
           <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:8px">Check your email</div>
-          <div style="font-size:13px;color:var(--gray);line-height:1.7">We emailed a sign-in link to<br><strong id="login-email-shown" style="color:var(--navy)"></strong><br><span style="font-size:11px">Click the link in that email to sign in.</span></div>
+          <div style="font-size:13px;color:var(--gray);line-height:1.7">We emailed a sign-in link to<br>
+            <strong id="login-email-shown" style="color:var(--navy)"></strong><br>
+            <span style="font-size:11px">Click the link in that email to sign in.</span>
+          </div>
           <button class="btn btn-ghost btn-sm" style="margin-top:20px" onclick="loginReset()">Try a different email</button>
         </div>
       </div>
     </div>`;
+  loginSetMode('password');
   setTimeout(()=>document.getElementById('login-email')?.focus(), 80);
+}
+
+let _loginMode = 'password';
+function loginSetMode(mode){
+  _loginMode = mode;
+  const pwWrap  = document.getElementById('login-pw-wrap');
+  const tabPw   = document.getElementById('login-tab-pw');
+  const tabLink = document.getElementById('login-tab-link');
+  const btn     = document.getElementById('login-submit-btn');
+  if(!pwWrap) return;
+  if(mode === 'password'){
+    pwWrap.style.display = '';
+    tabPw.style.background   = 'var(--navy)'; tabPw.style.color   = '#fff';
+    tabLink.style.background = 'transparent'; tabLink.style.color = 'var(--gray)';
+    if(btn) btn.textContent = 'Sign in →';
+    setTimeout(()=>document.getElementById('login-password')?.focus(), 30);
+  } else {
+    pwWrap.style.display = 'none';
+    tabLink.style.background = 'var(--navy)'; tabLink.style.color   = '#fff';
+    tabPw.style.background   = 'transparent'; tabPw.style.color   = 'var(--gray)';
+    if(btn) btn.textContent = 'Send sign-in link →';
+    setTimeout(()=>document.getElementById('login-email')?.focus(), 30);
+  }
 }
 
 function loginReset(){
@@ -6682,12 +6733,36 @@ function loginReset(){
   setTimeout(()=>document.getElementById('login-email')?.focus(), 30);
 }
 
+async function loginSubmit(){
+  if(_loginMode === 'password') await signInWithPassword();
+  else await sendMagicLink();
+}
+
+async function signInWithPassword(){
+  const email    = (document.getElementById('login-email')?.value||'').trim();
+  const password = (document.getElementById('login-password')?.value||'');
+  const errEl    = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if(!email)    { errEl.textContent='Please enter your email address'; errEl.style.display=''; return; }
+  if(!password) { errEl.textContent='Please enter your password';      errEl.style.display=''; return; }
+  const btn = document.getElementById('login-submit-btn');
+  if(btn){ btn.textContent='Signing in…'; btn.disabled=true; }
+  const { error } = await _sb.auth.signInWithPassword({ email, password });
+  if(error){
+    errEl.textContent = error.message === 'Invalid login credentials'
+      ? 'Incorrect email or password' : error.message;
+    errEl.style.display = '';
+    if(btn){ btn.textContent='Sign in →'; btn.disabled=false; }
+  }
+  // success handled by onAuthStateChange SIGNED_IN
+}
+
 async function sendMagicLink(){
   const email = (document.getElementById('login-email')?.value||'').trim();
   const errEl  = document.getElementById('login-error');
   if(!email){ errEl.textContent='Please enter your email address'; errEl.style.display=''; return; }
   errEl.style.display = 'none';
-  const btn = document.querySelector('#login-phase-1 .btn-primary');
+  const btn = document.getElementById('login-submit-btn');
   if(btn){ btn.textContent='Sending…'; btn.disabled=true; }
   const { error } = await _sb.auth.signInWithOtp({
     email,
