@@ -6926,8 +6926,14 @@ async function signOut(){
 
 async function loadCurrentProfile(){
   if(!CURRENT_USER) return;
-  const { data } = await _sb.from('profiles').select('*').eq('id', CURRENT_USER.id).single();
-  if(data) CURRENT_PROFILE = data;
+  try {
+    const timeout = new Promise(r => setTimeout(() => r({data:null}), 5000));
+    const { data } = await Promise.race([
+      _sb.from('profiles').select('*').eq('id', CURRENT_USER.id).single(),
+      timeout
+    ]);
+    if(data) CURRENT_PROFILE = data;
+  } catch(e){ console.warn('loadCurrentProfile error:', e); }
 }
 
 function userDisplayName(){
@@ -6970,7 +6976,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
     if(session){
       // Returning user — go straight to home
       CURRENT_USER = session.user;
-      try { await loadCurrentProfile(); } catch(e){ console.warn('loadProfile:', e); }
+      await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
       loadTemplates();
       restoreNav();                              // restore last VIEW/project on refresh
@@ -6987,7 +6993,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
         const { data } = await _getSessionSafe();
         if(data?.session){
           CURRENT_USER = data.session.user;
-          try { await loadCurrentProfile(); } catch(e){ console.warn('loadProfile:', e); }
+          await loadCurrentProfile();
           if(data.session.user.email) applyPendingInvite(data.session.user.email).catch(console.warn);
           loadTemplates();
           restoreNav();
@@ -7007,7 +7013,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
   } else if(event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED'){
     if(!CURRENT_USER || CURRENT_USER.id !== session.user.id){
       CURRENT_USER = session.user;
-      try { await loadCurrentProfile(); } catch(e){ console.warn('loadProfile:', e); }
+      await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
       if(VIEW === 'login'){
         VIEW = 'home';
