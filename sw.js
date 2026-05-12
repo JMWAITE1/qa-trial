@@ -1,4 +1,4 @@
-// NGL QA Trial — Service Worker v1
+// NGL QA Trial — Service Worker v2
 // Strategy: network-first for HTML (always get latest), cache-first for icons only.
 const CACHE = 'ngl-qa-trial-v1';
 
