@@ -6727,6 +6727,22 @@ function loginSetMode(mode){
   }
 }
 
+// Animated dots for login button loading state
+let _btnDotTimer = null;
+function _btnStartLoading(btn, base){
+  if(!btn) return;
+  btn.disabled = true;
+  let n = 0;
+  const dots = ['   ','·  ','··  ','···'];
+  btn.textContent = base + ' ·';
+  _btnDotTimer = setInterval(()=>{ n=(n+1)%4; btn.textContent = base + ' ' + dots[n]; }, 350);
+}
+function _btnStopLoading(btn, label){
+  clearInterval(_btnDotTimer);
+  _btnDotTimer = null;
+  if(btn){ btn.textContent = label; btn.disabled = false; }
+}
+
 function loginReset(){
   document.getElementById('login-phase-1').style.display = '';
   document.getElementById('login-phase-2').style.display = 'none';
@@ -6746,7 +6762,7 @@ async function signInWithPassword(){
   if(!email)    { errEl.textContent='Please enter your email address'; errEl.style.display=''; return; }
   if(!password) { errEl.textContent='Please enter your password';      errEl.style.display=''; return; }
   const btn = document.getElementById('login-submit-btn');
-  if(btn){ btn.textContent='Signing in…'; btn.disabled=true; }
+  _btnStartLoading(btn, 'Signing in');
   try {
     const timeout = new Promise((_,r) => setTimeout(()=>r(new Error('timeout')), 10000));
     const { error } = await Promise.race([
@@ -6759,12 +6775,12 @@ async function signInWithPassword(){
                 : error.message;
       errEl.textContent = msg;
       errEl.style.display = '';
-      if(btn){ btn.textContent='Sign in →'; btn.disabled=false; }
+      _btnStopLoading(btn, 'Sign in →');
     }
   } catch(e) {
     errEl.textContent = 'Can\'t reach the server — check your connection or try on mobile';
     errEl.style.display = '';
-    if(btn){ btn.textContent='Sign in →'; btn.disabled=false; }
+    _btnStopLoading(btn, 'Sign in →');
   }
   // success handled by onAuthStateChange SIGNED_IN
 }
@@ -6775,7 +6791,7 @@ async function sendMagicLink(){
   if(!email){ errEl.textContent='Please enter your email address'; errEl.style.display=''; return; }
   errEl.style.display = 'none';
   const btn = document.getElementById('login-submit-btn');
-  if(btn){ btn.textContent='Sending…'; btn.disabled=true; }
+  _btnStartLoading(btn, 'Sending');
   const { error } = await _sb.auth.signInWithOtp({
     email,
     options: {
@@ -6786,7 +6802,7 @@ async function sendMagicLink(){
   if(error){
     errEl.textContent = error.message;
     errEl.style.display = '';
-    if(btn){ btn.textContent='Send sign-in link →'; btn.disabled=false; }
+    _btnStopLoading(btn, 'Send sign-in link →');
   } else {
     document.getElementById('login-email-shown').textContent = email;
     document.getElementById('login-phase-1').style.display = 'none';
