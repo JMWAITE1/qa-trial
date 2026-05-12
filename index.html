@@ -555,6 +555,7 @@ try {
       autoRefreshToken:  true,
       detectSessionInUrl: true,
       storage:           window.localStorage,
+      flowType:          'implicit',   // magic links work in any browser/email client
     }
   });
 } catch(e) {
