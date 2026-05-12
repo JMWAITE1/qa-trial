@@ -2762,7 +2762,7 @@ function _renderNPModal(p){
         <div><h2>${isEdit?`Edit: ${x(CUR.project.name)}`:'New Project'}</h2>
           <p>${isEdit?'Update project details and locations':'Set up your project — add tasks from the project view'}</p>
         </div>
-        <button type="button" class="m-close" onclick="closeModal()">×</button>
+        <button type="button" class="m-close" onclick="_npConfirmClose()">×</button>
       </div>
       <div class="m-body" style="overflow-y:auto;flex:1">
         <div class="fg"><label>Project Name *</label><input id="np-name" type="text" value="${x(p.name)}" placeholder="e.g. Queen's Wharf — Level 3 Fitout" oninput="_npDraftSave()"></div>
@@ -2781,12 +2781,21 @@ function _renderNPModal(p){
         </div>
       </div>
       <div class="m-foot">${deleteBtn}<div style="display:flex;gap:8px;margin-left:auto">
-        <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="_npConfirmClose()">Cancel</button>
         <button type="submit" class="btn btn-primary btn-sm">${isEdit?'Save Changes':'Create Project'}</button>
       </div></div>
     </form>
   </div>`, true);
   setTimeout(()=>{ const el=document.getElementById('np-name'); if(el){el.focus();} },50);
+}
+
+function _npConfirmClose(){
+  const name = document.getElementById('np-name')?.value.trim();
+  if(name && _NP?.mode === 'create'){
+    if(!confirm('Discard this new project?')) return;
+    _npClearDraft();
+  }
+  closeModal();
 }
 
 function _npCurrentFields(){
