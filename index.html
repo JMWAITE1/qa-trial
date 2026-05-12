@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.19</div>
+<div class="version-badge">V3.20</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -6049,25 +6049,42 @@ function saveTplTemplate(){ /* no-op */ }
 function goProject(){ VIEW='project'; CUR_LOC_ID=null; CUR_TRADE_ID=null; renderAll(); }
 
 async function openProject(id){
-  let data = null;
-  if(CURRENT_USER){
-    // Load role + project data in parallel
-    const [sbData, memberRes] = await Promise.all([
-      sbLoadProject(id),
-      _sb.from('project_members').select('*').eq('project_id',id).eq('user_id',CURRENT_USER.id).single()
-    ]);
-    if(sbData) { data = sbData; saveProj(id, sbData); }
-    CURRENT_MEMBER = memberRes.data || null;
-    CURRENT_ROLE = CURRENT_MEMBER?.role || 'pm'; // default pm for creator pre-sync
+  // Step 1: Render immediately from localStorage — no network needed, instant.
+  const localData = loadProj(id);
+  if(localData){
+    CUR_ID=id; CUR=localData; VIEW='project';
+    VIEW_MODE='location';
+    migratePrestart(localData);
+    LOC_OPEN={}; TASK_OPEN={};
+    localData.trades.forEach(t=>{ TASK_OPEN[t.id]=false; });
+    CURRENT_ROLE = CURRENT_ROLE || 'pm';
+    renderAll();  // show project immediately from cache
   }
-  if(!data) data = loadProj(id);
-  if(!data){ alert('Project not found.'); return; }
-  CUR_ID=id; CUR=data; VIEW='project';
-  VIEW_MODE='location';
-  migratePrestart(data);
-  LOC_OPEN={}; TASK_OPEN={};
-  data.trades.forEach(t=>{ TASK_OPEN[t.id]=false; });
-  renderAll();
+
+  // Step 2: Refresh from Supabase in background (8s timeout).
+  // Updates the view with latest server data but never blocks the initial render.
+  if(CURRENT_USER){
+    try {
+      const sbTimeout = new Promise(r => setTimeout(() => r([null, {data:null}]), 8000));
+      const [sbData, memberRes] = await Promise.race([
+        Promise.all([
+          sbLoadProject(id),
+          _sb.from('project_members').select('*').eq('project_id',id).eq('user_id',CURRENT_USER.id).single()
+        ]),
+        sbTimeout
+      ]);
+      if(sbData){ CUR = sbData; saveProj(id, sbData); }
+      CURRENT_MEMBER = memberRes?.data || null;
+      CURRENT_ROLE = CURRENT_MEMBER?.role || 'pm';
+      if(!CUR){ alert('Project not found.'); return; }
+      renderAll();  // re-render with fresh Supabase data
+    } catch(e){
+      console.warn('openProject Supabase error:', e);
+      if(!CUR){ alert('Project not found.'); }
+    }
+  } else if(!CUR){
+    alert('Project not found.');
+  }
 }
 
 // Role helpers — used throughout to gate PM-only actions
@@ -6639,7 +6656,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.19</div>
+<div class="version-badge">V3.20</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
