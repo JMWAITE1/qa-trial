@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.09</div>
+<div class="version-badge">V3.19</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -2843,16 +2843,16 @@ function _npSave(){
     });
     persist();
     _npClearDraft();
-    _showSaved('✓ Changes Saved');
+    closeModal();
     VIEW='project';
+    renderAll();
   } else {
     createProject(proj,locations);
     _npClearDraft();
     CURRENT_ROLE = CURRENT_ROLE || 'pm';
-    // Switch modal to edit mode — user stays here and can keep tweaking
-    _NP={mode:'edit',locations:locations};
-    _renderNPModal(proj);
-    setTimeout(()=>_showSaved('✓ Project Created'), 50);
+    closeModal();
+    VIEW='project';
+    renderAll();
   }
 }
 
@@ -6639,7 +6639,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.09</div>
+<div class="version-badge">V3.19</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
@@ -6962,8 +6962,21 @@ window.onerror=(msg,src,line)=>{
 function _getSessionSafe(){
   return Promise.race([
     _sb.auth.getSession(),
-    new Promise(r => setTimeout(() => r({data:{session:null}}), 5000))
+    new Promise(r => setTimeout(() => r({data:{session:null}}), 12000))
   ]);
+}
+
+// Read whatever session Supabase stored in localStorage without a network call.
+// Used as a fallback when getSession() times out — lets us render the app
+// while the token refresh happens in the background.
+function _readLocalSession(){
+  try {
+    const projectRef = SUPABASE_URL.split('//')[1].split('.')[0];
+    const raw = localStorage.getItem(`sb-${projectRef}-auth-token`);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.access_token ? parsed : null;
+  } catch(e){ return null; }
 }
 
 // Safety net: if the app is still showing the spinner after 10 seconds,
@@ -7014,6 +7027,25 @@ _sb.auth.onAuthStateChange(async (event, session) => {
           return;
         }
       } catch(e){ console.warn('getSession fallback failed:', e); }
+      // getSession timed out — check localStorage directly before showing login.
+      // This handles a slow network where the token is valid but the request hangs.
+      const localSess = _readLocalSession();
+      if(localSess){
+        console.log('Auth: using localStorage session as fallback');
+        CURRENT_USER = localSess.user || { id: localSess.user_id };
+        await loadCurrentProfile();
+        loadTemplates();
+        restoreNav();
+        if(!CUR) VIEW = 'home';
+        if(VIEW==='report'&&!CUR) VIEW='home';
+        _markAuthDone();
+        renderAll();
+        // kick off a real session refresh in the background
+        _sb.auth.getSession().then(({ data }) => {
+          if(data?.session) syncProjectsFromSupabase().catch(console.warn);
+        }).catch(console.warn);
+        return;
+      }
       // Truly no session — show login
       _markAuthDone();
       VIEW = 'login';
