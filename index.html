@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.26</div>
+<div class="version-badge">V3.27</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -1863,13 +1863,20 @@ async function sbPersist(){
 
 async function syncProjectsFromSupabase(){
   const sbIdx=await sbLoadIndex();
-  if(!sbIdx.length) return;
   const localIdx=loadIndex();
   let changed=false;
+  // Add/update projects from Supabase
   for(const sp of sbIdx){
     const li=localIdx.findIndex(p=>p.id===sp.id);
     if(li>=0){ if(new Date(sp.updated)>new Date(localIdx[li].updated||0)){ localIdx[li]=sp; changed=true; } }
     else { localIdx.push(sp); changed=true; }
+  }
+  // Remove local-only projects that no longer exist in Supabase
+  // (e.g. projects created during testing that were never properly synced)
+  if(sbIdx.length){
+    const sbIds = new Set(sbIdx.map(p=>p.id));
+    const filtered = localIdx.filter(p=>sbIds.has(p.id));
+    if(filtered.length !== localIdx.length){ changed=true; localIdx.splice(0,localIdx.length,...filtered); }
   }
   if(changed){ saveIndex(localIdx); if(VIEW==='home') renderHome(); }
 }
@@ -6659,7 +6666,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.26</div>
+<div class="version-badge">V3.27</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
@@ -7072,21 +7079,27 @@ _sb.auth.onAuthStateChange(async (event, session) => {
     } else {
       // TRIAL_MODE: auto sign-in anonymously — no login screen ever shown.
       if(TRIAL_MODE){
+        _markAuthDone(); // disarm safety net immediately — we handle the UI ourselves
         try {
-          const { data: anonData } = await _sb.auth.signInAnonymously();
+          const anonTimeout = new Promise((_,r) => setTimeout(() => r(new Error('timeout')), 10000));
+          const { data: anonData } = await Promise.race([_sb.auth.signInAnonymously(), anonTimeout]);
           if(anonData?.session){
             CURRENT_USER = anonData.session.user;
             await loadCurrentProfile();
             loadTemplates();
             restoreNav();
             if(!CUR) VIEW = 'home';
-            _markAuthDone();
             renderAll();
             syncProjectsFromSupabase().catch(console.warn);
             return;
           }
         } catch(e){ console.warn('Anonymous sign-in failed:', e); }
-        // Anonymous auth not enabled — fall through to normal login below
+        // Failed — show a simple retry prompt instead of the login form
+        document.getElementById('app-root').innerHTML =
+          '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif">' +
+          '<div style="text-align:center;padding:32px"><p style="color:#64748b;margin:0 0 16px">Couldn\'t connect — check your internet.</p>' +
+          '<button onclick="location.reload()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;cursor:pointer">Try again</button></div></div>';
+        return;
       }
 
       // INITIAL_SESSION null — check localStorage FIRST (instant, no network).
