@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.25</div>
+<div class="version-badge">V3.26</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -2031,7 +2031,6 @@ function renderHeader(){
         <div><div class="hdr-brand"><span class="hdr-brand-full">${x(CUR.project.name)}</span><span class="hdr-brand-short">${x((CUR.project.name||'').substring(0,18)+(CUR.project.name?.length>18?'…':''))}</span></div><div class="hdr-sub">${x(CUR.project.client)}</div></div>
       </div>
       <div class="hdr-right">
-        ${isPM()?`<button class="btn btn-outline btn-sm" onclick="openInviteModal()">+ Invite</button>`:''}
         <button class="btn btn-outline btn-sm" onclick="openEditWizard()">✏ Edit</button>
         <button class="btn btn-outline btn-sm" onclick="goActions()">Actions</button>
         <button class="btn btn-white btn-sm" onclick="goReport()">Report</button>
@@ -2047,7 +2046,6 @@ function renderHeader(){
       <div class="hdr-right">
         <button onclick="openStatusLegend()" title="Status guide" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:17px;padding:0 2px;cursor:pointer;line-height:1;transition:color .15s" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,.5)'">ℹ</button>
         <button class="btn btn-outline btn-sm" onclick="goActivity()">Activity</button>
-        ${isPM()?`<button class="btn btn-outline btn-sm" onclick="openInviteModal()">+ Invite</button>`:''}
         <button class="btn btn-outline btn-sm" onclick="openEditWizard()">✏ Edit</button>
         <button class="btn btn-white btn-sm" onclick="goReport()">Report</button>
       </div>
@@ -2201,7 +2199,7 @@ function _renderContractorsPanel(){
   let body = '';
   if(_contractorsOpen){
     if(!count){
-      body = `<div style="background:#fff;border-top:1px solid var(--border);padding:12px 12px;font-size:12px;color:var(--gray)">No contractors yet — click + Add.</div>`;
+      body = `<div style="background:#fff;border-top:1px solid var(--border);padding:12px 12px;font-size:12px;color:var(--gray)">No contractors yet — click + Invite to add someone.</div>`;
     } else {
       const rows = list.map(c=>{
         const taskCount = (CUR.trades||[]).filter(t=>t.sub_name===c.name).length;
@@ -2230,9 +2228,9 @@ function _renderContractorsPanel(){
 
   return `<div class="sub-panel" style="margin-bottom:12px">
     <div class="sub-panel-hdr" onclick="_contractorsOpen=!_contractorsOpen;renderProject()">
-      <span style="font-size:12px;font-weight:700;color:var(--navy)">Contractor List${badge}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--navy)">Contractors${badge}</span>
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 9px" onclick="event.stopPropagation();_contractorsOpen=true;openEditContractorModal(null)">+ Add</button>
+        ${isPM()?`<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 9px" onclick="event.stopPropagation();_contractorsOpen=true;openInviteModal()">+ Invite</button>`:''}
         <span style="font-size:11px;color:var(--gray)">${chevron}</span>
       </div>
     </div>
@@ -6661,7 +6659,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.25</div>
+<div class="version-badge">V3.26</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
