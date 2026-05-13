@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.24</div>
+<div class="version-badge">V3.25</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -2124,13 +2124,16 @@ function renderProjGrid(items){
       </div>
     </div>`;
   }).join('');
-  const newCard=`<div class="new-proj-card" onclick="openWizard()"><div class="new-proj-icon">+</div><div class="new-proj-lbl">New Project</div></div>`;
+  const newCard=IS_SUB_ONLY?'':
+    `<div class="new-proj-card" onclick="openWizard()"><div class="new-proj-icon">+</div><div class="new-proj-lbl">New Project</div></div>`;
   if(!items.length) return `<div class="proj-grid">${newCard}</div><div class="home-no-results">No projects have been loaded yet.</div>`;
   return `<div class="proj-grid">${cards}${newCard}</div>`;
 }
 
 function renderProjList(items){
-  if(!items.length) return `<div class="home-no-results">No projects have been loaded yet.</div><div class="proj-list"><div class="proj-list-row" style="border:2px dashed var(--border);color:var(--blue);justify-content:center;font-size:13px;font-weight:500" onclick="openWizard()">+ New Project</div></div>`;
+  if(!items.length) return IS_SUB_ONLY
+    ? `<div class="home-no-results">No projects assigned yet.</div>`
+    : `<div class="home-no-results">No projects have been loaded yet.</div><div class="proj-list"><div class="proj-list-row" style="border:2px dashed var(--border);color:var(--blue);justify-content:center;font-size:13px;font-weight:500" onclick="openWizard()">+ New Project</div></div>`;
   const rows=items.map(p=>`<div class="proj-list-row" onclick="openProject('${p.id}')">
     <div class="proj-list-name">${x(p.name)}</div>
     <div class="proj-list-meta">${x(p.client||'')}${p.address?' · '+x(p.address):''}</div>
@@ -6658,7 +6661,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.24</div>
+<div class="version-badge">V3.25</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
@@ -6894,32 +6897,36 @@ async function sendInvite(){
   const btnEl    = document.getElementById('inv-send-btn');
   if(!email){ document.getElementById('inv-email')?.focus(); return; }
   if(btnEl){ btnEl.textContent='Sending…'; btnEl.disabled=true; }
-  // 1. Send magic link to invite email
+
+  // Embed invite data in the redirect URL so it works cross-device.
+  // When the subbie clicks the magic link they land here with these params.
+  const base = window.location.origin + window.location.pathname;
+  const params = new URLSearchParams({
+    inv_project: CUR_ID,
+    inv_role: role,
+    inv_see_all: seeAll ? '1' : '0',
+    inv_trades: tradeTypes.join(',')
+  });
+  const redirectTo = `${base}?${params.toString()}`;
+
   const { error: authErr } = await _sb.auth.signInWithOtp({
     email,
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: 'https://jmwaite1.github.io/qa-trial'
-    }
+    options: { shouldCreateUser: true, emailRedirectTo: redirectTo }
   });
   if(authErr){
     if(resultEl){ resultEl.textContent='Error: '+authErr.message; resultEl.style.background='var(--red-bg)'; resultEl.style.color='var(--red)'; resultEl.style.display=''; }
     if(btnEl){ btnEl.textContent='Send invite →'; btnEl.disabled=false; }
     return;
   }
-  // 2. Look up the user's profile (they may not exist yet — that's OK, we'll add them when they sign in)
+  // If user already has an account, add them to project_members immediately
   const { data: profile } = await _sb.from('profiles').select('id').eq('email', email).single();
   if(profile){
-    // User already exists — add them to project_members now
     await _sb.from('project_members').upsert({
       project_id: CUR_ID, user_id: profile.id, role,
       can_see_all: seeAll, trade_types: tradeTypes,
       invited_by: CURRENT_USER?.id
     }, { onConflict:'project_id,user_id' });
   }
-  // 3. Store a pending invite so we can add them on first sign-in
-  localStorage.setItem(`ngl_pending_inv_${email.toLowerCase()}`,
-    JSON.stringify({ project_id:CUR_ID, role, can_see_all:seeAll, trade_types:tradeTypes }));
   if(resultEl){
     resultEl.innerHTML=`✅ Invite sent to <strong>${x(email)}</strong>. They'll be added to this project when they sign in.`;
     resultEl.style.background='var(--green-bg)'; resultEl.style.color='var(--green)';
@@ -6928,12 +6935,31 @@ async function sendInvite(){
   if(btnEl){ btnEl.textContent='Send another'; btnEl.disabled=false; document.getElementById('inv-email').value=''; }
 }
 
-// On sign-in: check for pending invites for this user and apply them
+// On sign-in: check URL params for invite data (embedded by sendInvite cross-device).
+// Falls back to legacy localStorage key for older invites.
 async function applyPendingInvite(email){
-  const key = `ngl_pending_inv_${email.toLowerCase()}`;
-  const raw = localStorage.getItem(key);
-  if(!raw || !CURRENT_USER) return;
+  if(!CURRENT_USER) return;
   try{
+    // Check URL params first (new cross-device method)
+    const sp = new URLSearchParams(window.location.search);
+    const invProject = sp.get('inv_project');
+    if(invProject){
+      const invRole    = sp.get('inv_role')||'sub';
+      const invSeeAll  = sp.get('inv_see_all')==='1';
+      const invTrades  = sp.get('inv_trades') ? sp.get('inv_trades').split(',').filter(Boolean) : [];
+      await _sb.from('project_members').upsert({
+        project_id: invProject, user_id: CURRENT_USER.id,
+        role: invRole, can_see_all: invSeeAll, trade_types: invTrades
+      }, { onConflict:'project_id,user_id' });
+      // Clean up URL without reloading
+      const clean = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', clean);
+      return;
+    }
+    // Legacy localStorage fallback
+    const key = `ngl_pending_inv_${email.toLowerCase()}`;
+    const raw = localStorage.getItem(key);
+    if(!raw) return;
     const inv = JSON.parse(raw);
     await _sb.from('project_members').upsert({
       project_id: inv.project_id, user_id: CURRENT_USER.id,
@@ -6942,6 +6968,20 @@ async function applyPendingInvite(email){
     }, { onConflict:'project_id,user_id', ignoreDuplicates:true });
     localStorage.removeItem(key);
   }catch(e){ console.warn('applyPendingInvite:', e); }
+}
+
+// After login, check if this user is sub-only (no PM memberships).
+// Used to hide PM-only features like New Project on the home screen.
+let IS_SUB_ONLY = false;
+async function detectGlobalRole(){
+  if(!CURRENT_USER) return;
+  try{
+    const { data } = await _sb.from('project_members')
+      .select('role').eq('user_id', CURRENT_USER.id);
+    if(data && data.length > 0){
+      IS_SUB_ONLY = data.every(m => m.role === 'sub' || m.role === 'client');
+    }
+  }catch(e){ /* silent — defaults to IS_SUB_ONLY=false (full access) */ }
 }
 
 async function signOut(){
@@ -7023,6 +7063,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       CURRENT_USER = session.user;
       await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
+      detectGlobalRole().catch(console.warn);
       loadTemplates();
       restoreNav();                              // restore last VIEW/project on refresh
       if(!CUR) VIEW = 'home';                   // safety: if no project loaded fall back to home
@@ -7098,6 +7139,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       CURRENT_USER = session.user;
       await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
+      detectGlobalRole().catch(console.warn);
       if(VIEW === 'login'){
         VIEW = 'home';
         loadTemplates();
