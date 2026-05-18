@@ -529,7 +529,7 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.29</div>
+<div class="version-badge">V3.30</div>
 <div id="hdr-root"></div>
 <div id="bc-root"></div>
 <div id="app-root"></div>
@@ -1771,7 +1771,7 @@ async function sbLoadProject(id){
     for(const t of (tasksR.data||[])) taskData[t.id]={ outcome:t.outcome||null, answers:{} };
     for(const a of (answersR.data||[])){
       if(!taskData[a.task_id]) taskData[a.task_id]={ outcome:null, answers:{} };
-      taskData[a.task_id].answers[a.task_item_id]={ value:a.value||'', flagged:a.flagged||false, note:a.note||'' };
+      taskData[a.task_id].answers[a.task_item_id]={ value:a.value||'', flagged:a.flagged||false, text:a.note||'' };
     }
     const contractors=(contractorsR.data||[]).map(c=>({
       id:c.id, name:c.name, contact:c.contact||'', notes:c.notes||''
@@ -1827,7 +1827,7 @@ async function sbPersist(){
     if(CUR.taskItems?.length){
       await _sb.from('task_items').upsert(
         CUR.taskItems.map(i=>({ id:i.id, task_id:i.trade_id, project_id:CUR_ID,
-          label:i.label, type:i.type, group_name:i.group||'', sort_order:i.sort_order||0 }))
+          label:i.label, type:i.type, group_name:i.group||'', sort_order:i.order||0 }))
       );
     }
     // Task answers â€” use item id as stable row id (one answer per item)
@@ -1835,7 +1835,7 @@ async function sbPersist(){
     for(const [tradeId,tData] of Object.entries(CUR.taskData||{})){
       for(const [itemId,ans] of Object.entries(tData.answers||{})){
         answers.push({ id:itemId, task_item_id:itemId, task_id:tradeId, project_id:CUR_ID,
-          value:ans.value||'', flagged:ans.flagged||false, note:ans.note||'',
+          value:ans.value||'', flagged:ans.flagged||false, note:ans.text||'',
           updated_by:CURRENT_USER.id });
       }
     }
@@ -2852,6 +2852,14 @@ function _npSave(){
       if(i<nonPrestart.length){ nonPrestart[i].name=nm; }
       else{ const nl={id:uid(),name:nm,order:CUR.locations.length}; CUR.locations.push(nl); nonPrestart.push(nl); }
     });
+    // Remove locations deleted in the wizard (trim to the length of the wizard list)
+    if(nonPrestart.length > locations.length){
+      const removedLocIds = new Set(nonPrestart.slice(locations.length).map(l=>l.id));
+      const removedTradeIds = new Set(CUR.trades.filter(t=>removedLocIds.has(t.location_id)).map(t=>t.id));
+      CUR.locations = CUR.locations.filter(l=>!removedLocIds.has(l.id));
+      CUR.trades = CUR.trades.filter(t=>!removedLocIds.has(t.location_id));
+      CUR.taskItems = (CUR.taskItems||[]).filter(i=>!removedTradeIds.has(i.trade_id));
+    }
     persist();
     _npClearDraft();
     closeModal();
@@ -3045,7 +3053,7 @@ function confirmAddCheckpoints(){
     CUR.checkpoints.push({id:cp.id,trade_id:CUR_TRADE_ID,name:cp.name,type:cp.type,scope:cp.scopeEnabled?cp.scope||'':'',order:order++,items:cp.items.filter(i=>i.active).map(i=>({id:i.id,label:i.label})),specs:(cp.specs||[]).map(s=>({id:s.id,label:s.label,hint:s.hint||'',photo:s.photo!==false}))});
   }
   if(ccName&&_ccItems.length){
-    CUR.checkpoints.push({id:uid(),trade_id:CUR_TRADE_ID,name:ccName,type:ccType,order:order++,items:_ccItems.map(i=>({id:i.id,label:i.label}))});
+    CUR.checkpoints.push({id:uid(),trade_id:CUR_TRADE_ID,name:ccName,type:'custom',order:order++,items:_ccItems.map(i=>({id:i.id,label:i.label}))});
   }
   persist(); closeModal(); renderProject();
 }
@@ -3064,7 +3072,7 @@ function openTaskInspection(tradeId){
   const trade=CUR.trades.find(t=>t.id===tradeId);
   if(!trade) return;
   const data=getOrInitTaskData(tradeId);
-  const isPMContext = ROLE_FILTER==='pm' || trade.pm_only;
+  const isPMContext = (ROLE_FILTER==='pm' && isPM()) || trade.pm_only || isPM();
   if(data.outcome==='approved'){
     renderTaskApprovedView(tradeId, data);
     return;
@@ -3364,7 +3372,8 @@ function renderTaskPMView(tradeId, data){
 
   const footHtml=`
     <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
-    ${canAct?`<button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="saveTaskPM('${tradeId}','rejected')">Reject</button>`:''}`;
+    ${canAct?`<button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="saveTaskPM('${tradeId}','rejected')">Reject</button>`:''}
+    ${canAct?`<button class="btn btn-green btn-sm" onclick="saveTaskPM('${tradeId}','approved')">Approve âœ“</button>`:''}`;
   renderTaskModal(tradeId, 'PM Review', bodyHtml, footHtml);
 }
 
@@ -4416,10 +4425,7 @@ function confirmAddLocation(){
   const scope=document.getElementById('new-loc-scope')?.value.trim()||'';
   const newLoc={id:uid(),name,scope,order:CUR.locations.length};
   CUR.locations.push(newLoc);
-  const tradeTypes=[...new Set(CUR.trades.map(t=>t.trade_type))];
-  for(const tt of tradeTypes){
-    CUR.trades.push({id:uid(),location_id:newLoc.id,trade_type:tt,name:TRADE_MAP[tt]?.name||tt,sub_name:'',sub_contact:'',scope:'',order:TRADES.findIndex(t=>t.id===tt)});
-  }
+  // Don't auto-add trades â€” let the PM add tasks explicitly via "+ Add task"
   persist(); closeModal(); renderProject();
 }
 
@@ -6086,8 +6092,12 @@ async function openProject(id){
         sbTimeout
       ]);
       if(sbData){ CUR = sbData; saveProj(id, sbData); }
-      CURRENT_MEMBER = memberRes?.data || null;
-      CURRENT_ROLE = CURRENT_MEMBER?.role || 'pm';
+      // Only update role if Supabase actually returned data â€” on timeout memberRes is
+      // {data:null} and we must NOT overwrite the role already set from localStorage.
+      if(memberRes?.data !== undefined){
+        CURRENT_MEMBER = memberRes.data || null;
+        CURRENT_ROLE = CURRENT_MEMBER?.role || CURRENT_ROLE || 'pm';
+      }
       if(!CUR){ alert('Project not found.'); return; }
       renderAll();  // re-render with fresh Supabase data
     } catch(e){
@@ -6668,7 +6678,7 @@ td.yes{color:#15803d;font-weight:600}td.no{color:#dc2626;font-weight:600}
 @media print{.loc-section{break-before:page}.loc-section:first-child{break-before:auto}.trade-section,.cp-section{break-inside:avoid}}
 </style></head><body>
 <style>.version-badge{position:fixed;top:8px;right:12px;background:rgba(0,0,0,.45);color:rgba(255,255,255,.9);font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:3px 8px;border-radius:4px;z-index:9999;pointer-events:none;letter-spacing:.5px;font-variant-numeric:tabular-nums}</style>
-<div class="version-badge">V3.29</div>
+<div class="version-badge">V3.30</div>
 <div class="rpt-hdr"><div><h1>${x(p.name||'QA Report')}</h1>${p.client?`<div class="meta">Client: ${x(p.client)}</div>`:''}${p.address?`<div class="meta">${x(p.address)}</div>`:''}${s.pm||p.pm?`<div class="meta">PM: ${x(s.pm||p.pm)}</div>`:''}<div class="meta">Report date: ${rptDate}</div></div><div class="logo-box">Your logo<br>here</div></div>
 <div class="wrap">${body||'<p style="color:#94a3b8">No content selected.</p>'}</div>
 </body></html>`);
@@ -6834,7 +6844,7 @@ async function sendMagicLink(){
     email,
     options: {
       shouldCreateUser: true,
-      emailRedirectTo: 'https://jmwaite1.github.io/qa-level-b-form'
+      emailRedirectTo: window.location.origin + window.location.pathname
     }
   });
   if(error){
@@ -7070,7 +7080,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       CURRENT_USER = session.user;
       await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
-      detectGlobalRole().catch(console.warn);
+      detectGlobalRole().then(()=>{ if(VIEW==='home') renderHome(); }).catch(console.warn);
       loadTemplates();
       restoreNav();                              // restore last VIEW/project on refresh
       if(!CUR) VIEW = 'home';                   // safety: if no project loaded fall back to home
@@ -7153,7 +7163,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       CURRENT_USER = session.user;
       await loadCurrentProfile();
       if(session.user.email) applyPendingInvite(session.user.email).catch(console.warn);
-      detectGlobalRole().catch(console.warn);
+      detectGlobalRole().then(()=>{ if(VIEW==='home') renderHome(); }).catch(console.warn);
       if(VIEW === 'login'){
         VIEW = 'home';
         loadTemplates();
